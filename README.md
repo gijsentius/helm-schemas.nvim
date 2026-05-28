@@ -34,6 +34,14 @@ return {
 }
 ```
 
+Then run this once in Neovim to install the required treesitter parsers:
+
+```
+:TSInstall yaml gotmpl
+```
+
+> LazyVim will show a "No parser for language yaml" error on first startup until the parsers are installed. Run `:TSInstall yaml gotmpl` to fix it.
+
 ### Plain lazy.nvim
 
 ```lua

@@ -56,6 +56,13 @@ return {
     },
   },
 
+  -- Treesitter: yaml parser is required by LazyVim; gotmpl for Helm templates
+  {
+    "nvim-treesitter/nvim-treesitter",
+    optional = true,
+    opts = { ensure_installed = { "yaml", "gotmpl" } },
+  },
+
   -- Mason: auto-install language servers
   {
     "mason-org/mason.nvim",
