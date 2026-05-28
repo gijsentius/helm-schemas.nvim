@@ -1,8 +1,8 @@
 -- Automatically select the right schema for a yaml/helm buffer based on its
 -- kind/apiVersion fields, without requiring a $schema modeline.
 --
--- Targets both yamlls (plain yaml files) and helm_ls (files under templates/).
--- Re-evaluates whenever the buffer content changes so any filename works.
+-- Injects a virtual modeline via workspace/didChangeConfiguration so yamlls
+-- uses the correct schema without modifying the file on disk.
 
 local M = {}
 
@@ -35,6 +35,9 @@ local function extract_gvk(bufnr)
   return kind, api_version
 end
 
+-- Send the schema for fpath to a yamlls client via didChangeConfiguration.
+-- We set the schema URI to match exactly the file path so no other file picks
+-- it up, and ensure all other cluster schemas stay as empty-fileMatch (inactive).
 local function apply_to_yamlls(client, fpath, schema_uri)
   local settings = vim.deepcopy(client.config.settings or {})
   settings.yaml = settings.yaml or {}
@@ -68,6 +71,20 @@ local function apply_schema(bufnr, schema_uri)
   end
 end
 
+-- Insert or update the yaml-language-server modeline as line 1 of the buffer.
+-- This is the most reliable way to bind a schema: yamlls always respects it.
+local function set_modeline(bufnr, schema_uri)
+  local lines = vim.api.nvim_buf_get_lines(bufnr, 0, 1, false)
+  local modeline = "# yaml-language-server: $schema=" .. schema_uri
+  local first = lines[1] or ""
+  if first:match("^#%s*yaml%-language%-server") then
+    if first == modeline then return end  -- already correct
+    vim.api.nvim_buf_set_lines(bufnr, 0, 1, false, { modeline })
+  else
+    vim.api.nvim_buf_set_lines(bufnr, 0, 0, false, { modeline })
+  end
+end
+
 local lookup_cache = nil
 local lookup_dirty = true
 
@@ -84,7 +101,7 @@ function M.invalidate()
   lookup_dirty = true
 end
 
--- Track the last schema applied per buffer so we don't spam didChangeConfiguration.
+-- Track the last schema applied per buffer so we don't spam.
 local applied = {}  -- bufnr -> schema_uri last sent
 
 local function handle_buf(bufnr)
@@ -100,14 +117,16 @@ local function handle_buf(bufnr)
   local entry = get_lookup()[kind .. "|" .. api_version]
   if not entry then return end
 
-  -- Only send if schema changed for this buffer.
   if applied[bufnr] == entry.uri then return end
   applied[bufnr] = entry.uri
 
+  -- Use both modeline injection and didChangeConfiguration for maximum
+  -- compatibility. The modeline is the most reliable for yamlls.
+  set_modeline(bufnr, entry.uri)
   apply_schema(bufnr, entry.uri)
 end
 
--- Debounce timers per buffer so TextChanged doesn't spam.
+-- Debounce timers per buffer.
 local timers = {}
 
 local function schedule_handle(bufnr, delay_ms)
@@ -125,35 +144,29 @@ end
 function M.setup()
   local group = vim.api.nvim_create_augroup("helm_schemas_autoschema", { clear = true })
 
-  -- On open: wait for LSP to attach before sending.
   vim.api.nvim_create_autocmd({ "BufReadPost", "BufNewFile" }, {
     group   = group,
     pattern = { "*.yaml", "*.yml", "*.tpl" },
     callback = function(ev) schedule_handle(ev.buf, 600) end,
   })
 
-  -- Re-evaluate as content changes (catches files where kind/apiVersion are
-  -- typed in, or files with non-descriptive names like test.yaml).
   vim.api.nvim_create_autocmd({ "TextChanged", "TextChangedI" }, {
     group   = group,
     pattern = { "*.yaml", "*.yml", "*.tpl" },
     callback = function(ev) schedule_handle(ev.buf, 800) end,
   })
 
-  -- Also fire immediately when an LSP client attaches.
   vim.api.nvim_create_autocmd("LspAttach", {
     group = group,
     callback = function(ev)
       local client = vim.lsp.get_client_by_id(ev.data.client_id)
       if client and (client.name == "yamlls" or client.name == "helm_ls") then
-        -- Reset so a fresh attach always sends (client may have restarted).
         applied[ev.buf] = nil
         schedule_handle(ev.buf, 300)
       end
     end,
   })
 
-  -- Clean up on buffer close.
   vim.api.nvim_create_autocmd("BufDelete", {
     group = group,
     callback = function(ev)

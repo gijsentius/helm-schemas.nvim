@@ -59,3 +59,18 @@ vim.lsp.config("helm_ls", {
     },
   },
 })
+
+-- Enable servers if not already enabled by another plugin (e.g. LazyVim).
+-- Deferred so all plugin opts are merged before we check.
+vim.api.nvim_create_autocmd("User", {
+  pattern = "VeryLazy",
+  once = true,
+  callback = function()
+    if not vim.lsp.is_enabled("yamlls") then
+      vim.lsp.enable("yamlls")
+    end
+    if not vim.lsp.is_enabled("helm_ls") then
+      vim.lsp.enable("helm_ls")
+    end
+  end,
+})
