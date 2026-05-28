@@ -16,6 +16,12 @@ Neovim plugin that brings schema completions and validation to Helm charts and K
 
 - Neovim 0.10+
 - [lazy.nvim](https://github.com/folke/lazy.nvim)
+- [nvim-treesitter](https://github.com/nvim-treesitter/nvim-treesitter) with the `yaml` parser installed
+
+  ```lua
+  -- ensure yaml parser is installed
+  { "nvim-treesitter/nvim-treesitter", opts = { ensure_installed = { "yaml" } } }
+  ```
 
 Optional (auto-configured when present):
 
@@ -42,7 +48,8 @@ Create a file `~/.config/nvim/lua/plugins/helm.lua` with:
 
 ```lua
 return {
-  { "gijsentius/helm-schemas.nvim", opts = {} }
+  { "gijsentius/helm-schemas.nvim", opts = {} },
+  { "nvim-treesitter/nvim-treesitter", opts = { ensure_installed = { "yaml" } } },
 }
 ```
 
