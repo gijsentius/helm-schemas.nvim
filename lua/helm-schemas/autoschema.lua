@@ -2,11 +2,10 @@
 -- kind/apiVersion fields, without requiring a $schema modeline.
 --
 -- Targets both yamlls (plain yaml files) and helm_ls (files under templates/).
--- For helm_ls the schema is injected via helm-ls.yamlls.config.yaml.schemas.
+-- Re-evaluates whenever the buffer content changes so any filename works.
 
 local M = {}
 
--- Build a lookup: "Kind|apiVersion" -> { uri, priority }
 local function build_lookup(generate)
   local index = generate.load_index()
   local lookup = {}
@@ -25,7 +24,6 @@ local function build_lookup(generate)
   return lookup
 end
 
--- Extract kind and apiVersion from the first 50 lines of a buffer.
 local function extract_gvk(bufnr)
   local lines = vim.api.nvim_buf_get_lines(bufnr, 0, 50, false)
   local kind, api_version
@@ -47,10 +45,10 @@ end
 
 local function apply_to_helm_ls(client, fpath, schema_uri)
   local settings = vim.deepcopy(client.config.settings or {})
-  local cfg      = type(settings["helm-ls"])    == "table" and settings["helm-ls"]    or {}
-  local yls      = type(cfg.yamlls)             == "table" and cfg.yamlls             or {}
-  local inner    = type(yls.config)             == "table" and yls.config             or {}
-  local yaml_cfg = type(inner.yaml)             == "table" and inner.yaml             or {}
+  local cfg      = type(settings["helm-ls"]) == "table" and settings["helm-ls"] or {}
+  local yls      = type(cfg.yamlls)          == "table" and cfg.yamlls          or {}
+  local inner    = type(yls.config)          == "table" and yls.config          or {}
+  local yaml_cfg = type(inner.yaml)          == "table" and inner.yaml          or {}
   yaml_cfg.schemas = yaml_cfg.schemas or {}
   yaml_cfg.schemas[schema_uri] = fpath
   inner.yaml = yaml_cfg; yls.config = inner; cfg.yamlls = yls
@@ -61,7 +59,6 @@ end
 local function apply_schema(bufnr, schema_uri)
   local fpath = vim.api.nvim_buf_get_name(bufnr)
   if fpath == "" then return end
-
   for _, client in ipairs(vim.lsp.get_clients({ bufnr = bufnr })) do
     if client.name == "yamlls" then
       apply_to_yamlls(client, fpath, schema_uri)
@@ -87,6 +84,9 @@ function M.invalidate()
   lookup_dirty = true
 end
 
+-- Track the last schema applied per buffer so we don't spam didChangeConfiguration.
+local applied = {}  -- bufnr -> schema_uri last sent
+
 local function handle_buf(bufnr)
   local ft = vim.bo[bufnr].filetype
   if ft ~= "yaml" and ft ~= "helm" then return end
@@ -100,32 +100,65 @@ local function handle_buf(bufnr)
   local entry = get_lookup()[kind .. "|" .. api_version]
   if not entry then return end
 
+  -- Only send if schema changed for this buffer.
+  if applied[bufnr] == entry.uri then return end
+  applied[bufnr] = entry.uri
+
   apply_schema(bufnr, entry.uri)
+end
+
+-- Debounce timers per buffer so TextChanged doesn't spam.
+local timers = {}
+
+local function schedule_handle(bufnr, delay_ms)
+  if timers[bufnr] then
+    timers[bufnr]:stop()
+  end
+  local timer = vim.uv.new_timer()
+  timers[bufnr] = timer
+  timer:start(delay_ms, 0, vim.schedule_wrap(function()
+    timers[bufnr] = nil
+    if vim.api.nvim_buf_is_valid(bufnr) then handle_buf(bufnr) end
+  end))
 end
 
 function M.setup()
   local group = vim.api.nvim_create_augroup("helm_schemas_autoschema", { clear = true })
 
-  vim.api.nvim_create_autocmd({ "BufReadPost", "BufNewFile", "BufWritePost" }, {
+  -- On open: wait for LSP to attach before sending.
+  vim.api.nvim_create_autocmd({ "BufReadPost", "BufNewFile" }, {
     group   = group,
     pattern = { "*.yaml", "*.yml", "*.tpl" },
-    callback = function(ev)
-      vim.defer_fn(function()
-        if vim.api.nvim_buf_is_valid(ev.buf) then handle_buf(ev.buf) end
-      end, 500)
-    end,
+    callback = function(ev) schedule_handle(ev.buf, 600) end,
   })
 
-  -- Fire on both yamlls and helm_ls attach.
+  -- Re-evaluate as content changes (catches files where kind/apiVersion are
+  -- typed in, or files with non-descriptive names like test.yaml).
+  vim.api.nvim_create_autocmd({ "TextChanged", "TextChangedI" }, {
+    group   = group,
+    pattern = { "*.yaml", "*.yml", "*.tpl" },
+    callback = function(ev) schedule_handle(ev.buf, 800) end,
+  })
+
+  -- Also fire immediately when an LSP client attaches.
   vim.api.nvim_create_autocmd("LspAttach", {
     group = group,
     callback = function(ev)
       local client = vim.lsp.get_client_by_id(ev.data.client_id)
       if client and (client.name == "yamlls" or client.name == "helm_ls") then
-        vim.defer_fn(function()
-          if vim.api.nvim_buf_is_valid(ev.buf) then handle_buf(ev.buf) end
-        end, 300)
+        -- Reset so a fresh attach always sends (client may have restarted).
+        applied[ev.buf] = nil
+        schedule_handle(ev.buf, 300)
       end
+    end,
+  })
+
+  -- Clean up on buffer close.
+  vim.api.nvim_create_autocmd("BufDelete", {
+    group = group,
+    callback = function(ev)
+      applied[ev.buf] = nil
+      if timers[ev.buf] then timers[ev.buf]:stop(); timers[ev.buf] = nil end
     end,
   })
 end
