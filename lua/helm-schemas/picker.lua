@@ -1,12 +1,11 @@
 local M = {}
 
 function M.pick()
-  local generate     = require("helm-schemas.generate")
+  local generate      = require("helm-schemas.generate")
   local templates_dir = generate.templates_dir()
-
-  local index        = generate.load_index()
+  local index         = generate.load_index()
   local indexed_files = {}
-  local items        = {}
+  local items         = {}
 
   local function source_tag(source)
     if     source == "kubernetes" then return "[k8s]    ", "DiagnosticHint"
@@ -29,25 +28,24 @@ function M.pick()
     }
   end
 
-  -- Include any .yaml files on disk that aren't in the index (partial runs).
   for _, fpath in ipairs(vim.fn.glob(templates_dir .. "/*.yaml", false, true)) do
     local fname = vim.fn.fnamemodify(fpath, ":t")
     if not indexed_files[fname] then
-      local f    = io.open(fpath, "r")
       local name = fname:gsub("%.yaml$", ""):gsub("_", " ")
+      local f = io.open(fpath, "r")
       if f then
         local first = f:read("*l") or ""
         f:close()
         local extracted = first:match("^# (.+)$")
         if extracted then name = extracted end
       end
-      local prefix = fname:match("^k8s_")     and "kubernetes"
+      local source = fname:match("^k8s_")     and "kubernetes"
                   or fname:match("^crd_")     and "crd"
                   or fname:match("^cluster_") and "cluster"
                   or "schemastore"
-      local tag, hl = source_tag(prefix)
+      local tag, hl = source_tag(source)
       items[#items + 1] = { text = tag .. " " .. name, name = name,
-                             file = fpath, source = prefix, hl = hl }
+                             file = fpath, source = source, hl = hl }
     end
   end
 
@@ -72,21 +70,12 @@ function M.pick()
   require("snacks").picker({
     title  = "Helm / Kubernetes Schema Templates",
     items  = items,
+    layout = { preview = false },
     format = function(item)
       return {
         { item.text:sub(1, 11), item.hl },
         { item.name,            "SnacksPickerLabel" },
       }
-    end,
-    preview = function(ctx)
-      local f = io.open(ctx.item.file, "r")
-      if not f then
-        ctx.preview:set_lines({ "Template not found: " .. ctx.item.file })
-        return
-      end
-      local content = f:read("*a"); f:close()
-      ctx.preview:set_lines(vim.split(content, "\n"))
-      ctx.preview:set_syntax("yaml")
     end,
     confirm = function(picker, item)
       picker:close()
