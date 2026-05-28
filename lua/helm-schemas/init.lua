@@ -21,6 +21,10 @@ function M.setup(opts)
   if opts.data_dir then
     require("helm-schemas.generate")._set_data_dir(opts.data_dir)
   end
+
+  -- Auto-detect kind/apiVersion and apply the matching schema to yamlls
+  -- without requiring a $schema modeline in the file.
+  require("helm-schemas.autoschema").setup()
 end
 
 -- Convenience re-exports so callers can do require("helm-schemas").pick() etc.

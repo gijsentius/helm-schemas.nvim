@@ -71,6 +71,10 @@ local function spawn_worker(worker_name, extra_args, notify_title)
           worker_name .. " failed (exit " .. result.code .. ")\n" .. (result.stderr or ""),
           vim.log.levels.ERROR, { title = notify_title }
         )
+      else
+        -- Invalidate the autoschema lookup so next buffer open picks up new schemas.
+        local ok, autoschema = pcall(require, "helm-schemas.autoschema")
+        if ok then autoschema.invalidate() end
       end
     end)
   end)
