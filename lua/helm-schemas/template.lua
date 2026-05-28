@@ -56,6 +56,9 @@ end
 -- Fields that are always required for any k8s resource regardless of schema.
 local K8S_ALWAYS_REQUIRED = { apiVersion = true, kind = true, metadata = true, spec = true }
 
+-- Top-level fields that are server-managed and should never appear in user YAML.
+local K8S_SERVER_FIELDS = { status = true }
+
 -- Fields whose direct children are always emitted active (uncommented), even
 -- when the schema marks none of them as required.
 local ALWAYS_ACTIVE_CHILDREN = { metadata = true, spec = true }
@@ -117,7 +120,9 @@ local function walk(schema, depth, lines, max_depth, parent_key)
 
   local req_keys, opt_keys = {}, {}
   for k in pairs(props) do
-    if req_set[k] then req_keys[#req_keys + 1] = k
+    if depth == 0 and K8S_SERVER_FIELDS[k] then
+      -- skip server-managed fields at the top level
+    elseif req_set[k] then req_keys[#req_keys + 1] = k
     else opt_keys[#opt_keys + 1] = k end
   end
   -- Required first in a stable order, then optional
