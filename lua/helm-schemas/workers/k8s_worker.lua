@@ -1,12 +1,14 @@
 -- Kubernetes schema worker: fetches core k8s schemas from yannh/kubernetes-json-schema.
--- Args: <templates_dir> <index_path>
+-- Args: <lua_dir> <templates_dir> <index_path>
 -- Runs inside `nvim --headless -l` so vim.* APIs are available.
 
-local templates_dir = arg[1]
-local index_path    = arg[2]
+package.path = arg[1] .. "/?.lua;" .. arg[1] .. "/?/init.lua;" .. package.path
+
+local templates_dir = arg[2]
+local index_path    = arg[3]
 
 if not templates_dir or not index_path then
-  io.stderr:write("usage: k8s_worker.lua <templates_dir> <index_path>\n")
+  io.stderr:write("usage: k8s_worker.lua <lua_dir> <templates_dir> <index_path>\n")
   os.exit(1)
 end
 

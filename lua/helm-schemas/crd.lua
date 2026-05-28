@@ -9,14 +9,15 @@ function M.add_crd(source)
 
   local generate = require("helm-schemas.generate")
   local hs       = require("helm-schemas")
-  local worker   = (hs._plugin_dir or vim.fn.stdpath("config"))
-                   .. "/lua/helm-schemas/workers/crd_worker.lua"
+  local plugin_dir = hs._plugin_dir or vim.fn.stdpath("config")
+  local worker     = plugin_dir .. "/lua/helm-schemas/workers/crd_worker.lua"
+  local lua_dir    = plugin_dir .. "/lua"
 
   vim.notify("Parsing CRD: " .. source, vim.log.levels.INFO, { title = "helm-schemas" })
 
   vim.system(
     { vim.v.progpath, "--headless", "-l", worker,
-      source, generate.templates_dir(), generate.index_path() },
+      lua_dir, source, generate.templates_dir(), generate.index_path() },
     {
       text = true,
       stdout = function(_, line)

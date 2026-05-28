@@ -38,9 +38,19 @@ local function worker_dir()
     or (vim.fn.stdpath("config") .. "/lua/helm-schemas/workers")
 end
 
+local function plugin_lua_dir()
+  local hs = require("helm-schemas")
+  if hs._plugin_dir then return hs._plugin_dir .. "/lua" end
+  local info = debug.getinfo(1, "S")
+  local src  = info and info.source:match("^@(.+)$")
+  return src and vim.fn.fnamemodify(src, ":h:h") or (vim.fn.stdpath("config") .. "/lua")
+end
+
 local function spawn_worker(worker_name, extra_args, notify_title)
-  local wpath = worker_dir() .. "/" .. worker_name
-  local args  = { vim.v.progpath, "--headless", "-l", wpath }
+  local wpath   = worker_dir() .. "/" .. worker_name
+  local lua_dir = plugin_lua_dir()
+  -- Pass lua_dir as first arg so workers can set package.path before any require().
+  local args  = { vim.v.progpath, "--headless", "-l", wpath, lua_dir }
   for _, a in ipairs(extra_args or {}) do args[#args + 1] = a end
 
   vim.system(args, {

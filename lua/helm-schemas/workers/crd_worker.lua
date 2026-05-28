@@ -1,13 +1,15 @@
 -- CRD worker: parses a CRD YAML (path or URL) and appends entries to the index.
--- Args: <source> <templates_dir> <index_path>
+-- Args: <lua_dir> <source> <templates_dir> <index_path>
 -- Runs inside `nvim --headless -l` so vim.* APIs are available.
 
-local source        = arg[1]
-local templates_dir = arg[2]
-local index_path    = arg[3]
+package.path = arg[1] .. "/?.lua;" .. arg[1] .. "/?/init.lua;" .. package.path
+
+local source        = arg[2]
+local templates_dir = arg[3]
+local index_path    = arg[4]
 
 if not source or not templates_dir or not index_path then
-  io.stderr:write("usage: crd_worker.lua <source> <templates_dir> <index_path>\n")
+  io.stderr:write("usage: crd_worker.lua <lua_dir> <source> <templates_dir> <index_path>\n")
   os.exit(1)
 end
 
