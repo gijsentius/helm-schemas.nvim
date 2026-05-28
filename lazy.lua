@@ -1,60 +1,7 @@
 -- lazy.nvim reads this file automatically and merges it as the plugin's own
 -- spec, wiring up all optional integrations without any user configuration.
 
-local function hs() return require("helm-schemas") end
-local function gen() return require("helm-schemas.generate") end
-
 return {
-
-  -- LSP: yamlls and helm-ls configuration
-  {
-    "neovim/nvim-lspconfig",
-    optional = true,
-    opts = {
-      servers = {
-        yamlls = {
-          before_init = function(_, config)
-            local ok, store = pcall(require, "schemastore")
-            if ok then
-              config.settings.yaml.schemas = vim.tbl_deep_extend(
-                "force",
-                config.settings.yaml.schemas or {},
-                store.yaml.schemas()
-              )
-            end
-            local schemas_dir = gen().schemas_dir()
-            local schemas     = config.settings.yaml.schemas or {}
-            for _, fpath in ipairs(vim.fn.glob(schemas_dir .. "/*.json", false, true)) do
-              local uri = "file://" .. fpath
-              if not schemas[uri] then schemas[uri] = "" end
-            end
-            config.settings.yaml.schemas = schemas
-          end,
-          settings = {
-            yaml = {
-              keyOrdering = false,
-              validate     = true,
-              schemaStore  = { enable = false, url = "" },
-              schemas = {
-                ["https://raw.githubusercontent.com/yannh/kubernetes-json-schema/master/master-standalone-strict/all.json"] = {
-                  "*.yaml", "*.yml",
-                },
-                ["https://json.schemastore.org/chart.json"] = "Chart.yaml",
-              },
-            },
-          },
-        },
-
-        helm_ls = {
-          settings = {
-            ["helm-ls"] = {
-              yamlls = { path = "yaml-language-server" },
-            },
-          },
-        },
-      },
-    },
-  },
 
   -- Treesitter: yaml parser is required by LazyVim; gotmpl for Helm templates
   {
@@ -67,7 +14,7 @@ return {
   {
     "mason-org/mason.nvim",
     optional = true,
-    opts = { ensure_installed = { "helm-ls", "yamllint" } },
+    opts = { ensure_installed = { "yaml-language-server", "helm-ls", "yamllint" } },
   },
 
   -- which-key: group label for <leader>h
