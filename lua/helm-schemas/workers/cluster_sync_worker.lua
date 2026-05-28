@@ -145,6 +145,15 @@ local function write_entry(kind, api_version, display_name, schema, source_tag)
     if type(props.kind)       == "table" then props.kind.enum       = { kind }        end
   end
 
+  -- Add top-level required array so yamlls warns on missing apiVersion/kind/metadata/spec.
+  local top_required = {}
+  for _, f in ipairs({ "apiVersion", "kind", "metadata", "spec" }) do
+    if type(props) == "table" and props[f] then
+      top_required[#top_required + 1] = f
+    end
+  end
+  if #top_required > 0 then schema.required = top_required end
+
   local sf = io.open(schema_fpath, "w")
   if sf then
     local ok_enc, enc = pcall(vim.json.encode, schema)

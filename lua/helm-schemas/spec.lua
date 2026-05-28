@@ -76,7 +76,7 @@ return {
             local schemas_dir = gen().schemas_dir()
             for _, fpath in ipairs(vim.fn.glob(schemas_dir .. "/*.json", false, true)) do
               local uri = "file://" .. fpath
-              if not schemas[uri] then schemas[uri] = {} end
+              if not schemas[uri] then schemas[uri] = { "*.yaml", "*.yml" } end
             end
             config.settings.yaml.schemas = schemas
           end,
@@ -105,7 +105,7 @@ return {
             local schemas     = {}
             local schemas_dir = gen().schemas_dir()
             for _, fpath in ipairs(vim.fn.glob(schemas_dir .. "/*.json", false, true)) do
-              schemas["file://" .. fpath] = {}
+              schemas["file://" .. fpath] = { "*.yaml", "*.yml" }
             end
             if vim.tbl_isempty(schemas) then return end
             local cfg      = config.settings["helm-ls"] or {}
