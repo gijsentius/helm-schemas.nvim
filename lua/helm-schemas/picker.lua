@@ -88,6 +88,9 @@ function M.pick()
       local content = f:read("*a"); f:close()
       vim.api.nvim_set_current_win(target_win)
       vim.api.nvim_set_current_buf(target_buf)
+      -- Replace entire buffer so the $schema modeline lands on line 1,
+      -- which is where yamlls looks for it.
+      vim.api.nvim_buf_set_lines(target_buf, 0, -1, false, {})
       vim.cmd("startinsert")
       vim.snippet.expand(content)
     end,
