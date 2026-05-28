@@ -91,14 +91,16 @@ local function inline_refs(schema, all_components)
   end
   collect(schema)
 
-  -- Rewrite $ref values from "#/components/schemas/X" to "#/$defs/X".
+  -- Rewrite $ref values from "#/components/schemas/X" to "#/definitions/X".
+  -- Use "definitions" (draft-04/07) rather than "$defs" (draft 2019-09)
+  -- because yamlls validates and resolves schemas against draft-04/07.
   local function rewrite(node)
     if type(node) ~= "table" then return node end
     local out = {}
     for k, v in pairs(node) do
       if k == "$ref" and type(v) == "string" then
         local name = v:match("^#/components/schemas/(.+)$")
-        out[k] = name and ("#/$defs/" .. name) or v
+        out[k] = name and ("#/definitions/" .. name) or v
       else
         out[k] = rewrite(v)
       end
@@ -108,14 +110,14 @@ local function inline_refs(schema, all_components)
 
   local root = rewrite(schema)
 
-  -- Populate $defs with rewritten component schemas.
+  -- Populate definitions with rewritten component schemas.
   if next(needed) then
     local defs = {}
     for name in pairs(needed) do
       local comp = all_components[name]
       if comp then defs[name] = rewrite(comp) end
     end
-    root["$defs"] = defs
+    root["definitions"] = defs
   end
 
   return root
