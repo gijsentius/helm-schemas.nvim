@@ -92,8 +92,6 @@ function M.pick()
       local is_empty = line_count == 0
         or (line_count == 1 and lines_in_buf[1] == "")
 
-      vim.notify("buf=" .. target_buf .. " lines=" .. line_count .. " empty=" .. tostring(is_empty), vim.log.levels.INFO)
-
       local function do_insert(mode)
         vim.api.nvim_set_current_win(target_win)
         vim.api.nvim_set_current_buf(target_buf)
