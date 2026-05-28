@@ -49,9 +49,14 @@ Create a file `~/.config/nvim/lua/plugins/helm.lua` with:
 ```lua
 return {
   { "gijsentius/helm-schemas.nvim", opts = {} },
-  { "nvim-treesitter/nvim-treesitter", opts = { ensure_installed = { "yaml" } } },
+  {
+    "nvim-treesitter/nvim-treesitter",
+    opts = { ensure_installed = { "yaml", "gotmpl" } },
+  },
 }
 ```
+
+> The `yaml` and `gotmpl` treesitter parsers are not included in LazyVim's defaults and must be listed explicitly.
 
 That's it. lazy.nvim reads the bundled `lazy.lua` from the plugin and automatically wires up all integrations that are present in your config (LSP, keymaps, blink.cmp, Mason, etc.).
 
