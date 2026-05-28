@@ -37,7 +37,7 @@ return {
     "nvim-treesitter/nvim-treesitter",
     optional = true,
     opts = {
-      ensure_installed = { "gotmpl" },
+      ensure_installed = { "yaml", "gotmpl" },
     },
   },
 
