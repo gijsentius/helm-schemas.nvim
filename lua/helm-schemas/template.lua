@@ -141,18 +141,17 @@ local function walk(schema, depth, lines, max_depth, parent_key)
   end
 
   local function emit(k, optional)
-    local child = props[k]
-    local c = optional and "# " or ""
+    if optional then return end  -- omit optional fields entirely
 
-    -- Single fixed enum value → emit literally (covers apiVersion/kind)
+    local child = props[k]
+
     local fixed = single_enum(child)
     if fixed then
-      lines[#lines + 1] = indent .. c .. k .. ": " .. fixed
+      lines[#lines + 1] = indent .. k .. ": " .. fixed
       return
     end
 
     local ct = type(child) == "table" and child.type or nil
-    -- Normalise type: ['string','null'] -> 'string'
     if type(ct) == "table" then
       for _, t in ipairs(ct) do
         if t ~= "null" then ct = t; break end
@@ -161,45 +160,18 @@ local function walk(schema, depth, lines, max_depth, parent_key)
     end
 
     if has_real_props(child) then
-      -- Object with navigable children.
-      -- Always recurse when: the field is explicitly required by schema, OR it is
-      -- a K8S_ALWAYS_REQUIRED field at depth 0 (spec, metadata).
-      -- Collapse to `{}` only for optional or unrequired objects with no required
-      -- children (e.g. podSelector: {}, selector: {}).
       local sub_req = child.required
       local has_required_children = type(sub_req) == "table" and #sub_req > 0
-      local always_recurse = not optional and (has_required_children or K8S_ALWAYS_REQUIRED[k])
-      if always_recurse then
+      if has_required_children or K8S_ALWAYS_REQUIRED[k] then
         lines[#lines + 1] = indent .. k .. ":"
         walk(child, depth + 1, lines, max_depth, k)
-      elseif not optional then
-        lines[#lines + 1] = indent .. k .. ": {}"
       else
-        lines[#lines + 1] = indent .. c .. k .. ":"
-        walk(child, depth + 1, lines, max_depth, k)
+        lines[#lines + 1] = indent .. k .. ": {}"
       end
     elseif ct == "array" then
-      local items = child.items
-      if optional then
-        -- Optional arrays: comment out with a single-item hint
-        lines[#lines + 1] = indent .. "# " .. k .. ":"
-        if has_real_props(items) and depth + 1 <= max_depth then
-          lines[#lines + 1] = indent .. "#   -"
-          walk(items, depth + 2, lines, max_depth, k)
-        else
-          lines[#lines + 1] = indent .. "#   - " .. ts()
-        end
-      else
-        -- Required arrays: emit `[]` as the default
-        lines[#lines + 1] = indent .. k .. ": []"
-      end
+      lines[#lines + 1] = indent .. k .. ": []"
     else
-      -- Scalar: required gets a typed default, optional gets a tabstop
-      if optional then
-        lines[#lines + 1] = indent .. "# " .. k .. ": " .. ts()
-      else
-        lines[#lines + 1] = indent .. k .. ": " .. default_value(ct)
-      end
+      lines[#lines + 1] = indent .. k .. ": " .. default_value(ct)
     end
   end
 
@@ -222,12 +194,6 @@ function M.to_template(schema, name, url, schema_uri)
   reset_ts()
   local resolved = deref(schema, schema)
   local lines = {}
-  if schema_uri then
-    lines[#lines + 1] = "# yaml-language-server: $schema=" .. schema_uri
-  end
-  lines[#lines + 1] = "# " .. name
-  lines[#lines + 1] = "# " .. url
-  lines[#lines + 1] = ""
   walk(resolved, 0, lines, 4)
   lines[#lines + 1] = "$0"
   return table.concat(lines, "\n")

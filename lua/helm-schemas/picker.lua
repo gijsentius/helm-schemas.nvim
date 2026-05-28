@@ -88,11 +88,26 @@ function M.pick()
       local content = f:read("*a"); f:close()
       vim.api.nvim_set_current_win(target_win)
       vim.api.nvim_set_current_buf(target_buf)
-      -- Replace entire buffer so the $schema modeline lands on line 1,
-      -- which is where yamlls looks for it.
-      vim.api.nvim_buf_set_lines(target_buf, 0, -1, false, {})
-      vim.cmd("startinsert")
-      vim.snippet.expand(content)
+
+      local line_count = vim.api.nvim_buf_line_count(target_buf)
+      local is_empty = line_count == 0
+        or (line_count == 1 and vim.api.nvim_buf_get_lines(target_buf, 0, 1, false)[1] == "")
+
+      if is_empty then
+        vim.api.nvim_buf_set_lines(target_buf, 0, -1, false, {})
+        vim.cmd("startinsert")
+        vim.snippet.expand(content)
+      else
+        -- Append a YAML document separator then the new template.
+        local last = vim.api.nvim_buf_get_lines(target_buf, -2, -1, false)[1] or ""
+        local separator = last == "" and { "---" } or { "", "---" }
+        vim.api.nvim_buf_set_lines(target_buf, -1, -1, false, separator)
+        -- Move cursor to end and expand snippet there.
+        local new_last = vim.api.nvim_buf_line_count(target_buf)
+        vim.api.nvim_win_set_cursor(target_win, { new_last, 0 })
+        vim.cmd("startinsert")
+        vim.snippet.expand(content)
+      end
     end,
   })
 end
