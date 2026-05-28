@@ -56,6 +56,13 @@ end
 -- Fields that are always required for any k8s resource regardless of schema.
 local K8S_ALWAYS_REQUIRED = { apiVersion = true, kind = true, metadata = true, spec = true }
 
+-- Fields whose direct children are always emitted active (uncommented), even
+-- when the schema marks none of them as required.
+local ALWAYS_ACTIVE_CHILDREN = { metadata = true, spec = true }
+
+-- For metadata specifically, which child fields to promote as active.
+local METADATA_ALWAYS_ACTIVE = { name = true, namespace = true, labels = true, annotations = true }
+
 local tabstop_counter = 0
 local function ts() tabstop_counter = tabstop_counter + 1; return "$" .. tabstop_counter end
 local function reset_ts() tabstop_counter = 0 end
@@ -77,7 +84,8 @@ local function has_real_props(field)
   return type(p) == "table" and next(p) ~= nil
 end
 
-local function walk(schema, depth, lines, max_depth)
+-- `parent_key` is the key name of the schema being walked (nil at root).
+local function walk(schema, depth, lines, max_depth, parent_key)
   if depth > max_depth then return end
   local indent = string.rep("  ", depth)
 
@@ -95,6 +103,16 @@ local function walk(schema, depth, lines, max_depth)
     for k in pairs(K8S_ALWAYS_REQUIRED) do
       if props[k] then req_set[k] = true end
     end
+  end
+  -- Inside metadata: promote the common fields to active.
+  if parent_key == "metadata" then
+    for k in pairs(METADATA_ALWAYS_ACTIVE) do
+      if props[k] then req_set[k] = true end
+    end
+  end
+  -- Inside spec (and other ALWAYS_ACTIVE_CHILDREN): promote all direct children.
+  if parent_key and ALWAYS_ACTIVE_CHILDREN[parent_key] and parent_key ~= "metadata" then
+    for k in pairs(props) do req_set[k] = true end
   end
 
   local req_keys, opt_keys = {}, {}
@@ -148,12 +166,12 @@ local function walk(schema, depth, lines, max_depth)
       local always_recurse = not optional and (has_required_children or K8S_ALWAYS_REQUIRED[k])
       if always_recurse then
         lines[#lines + 1] = indent .. k .. ":"
-        walk(child, depth + 1, lines, max_depth)
+        walk(child, depth + 1, lines, max_depth, k)
       elseif not optional then
         lines[#lines + 1] = indent .. k .. ": {}"
       else
         lines[#lines + 1] = indent .. c .. k .. ":"
-        walk(child, depth + 1, lines, max_depth)
+        walk(child, depth + 1, lines, max_depth, k)
       end
     elseif ct == "array" then
       local items = child.items
@@ -162,7 +180,7 @@ local function walk(schema, depth, lines, max_depth)
         lines[#lines + 1] = indent .. "# " .. k .. ":"
         if has_real_props(items) and depth + 1 <= max_depth then
           lines[#lines + 1] = indent .. "#   -"
-          walk(items, depth + 2, lines, max_depth)
+          walk(items, depth + 2, lines, max_depth, k)
         else
           lines[#lines + 1] = indent .. "#   - " .. ts()
         end

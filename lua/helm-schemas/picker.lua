@@ -72,9 +72,10 @@ function M.pick()
     items  = items,
     layout = { preview = false },
     format = function(item)
+      local tag = item.text:match("^(%S+)") or ""
       return {
-        { item.text:sub(1, 11), item.hl },
-        { item.name,            "SnacksPickerLabel" },
+        { tag .. " ", item.hl },
+        { item.name, "SnacksPickerLabel" },
       }
     end,
     confirm = function(picker, item)
