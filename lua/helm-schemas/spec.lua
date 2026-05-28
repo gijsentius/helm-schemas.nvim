@@ -207,18 +207,45 @@ return {
   },
 
   -- -------------------------------------------------------------------------
-  -- blink.cmp: trigger completions on blank/list lines in yaml/helm files
-  -- (yamlls advertises no trigger characters so blink never auto-fires there)
+  -- blink.cmp: trigger completions in yaml/helm files
+  -- yamlls advertises no trigger characters so blink never auto-fires.
+  -- We trigger on:
+  --   • blank / list-marker lines (new key position after Enter)
+  --   • space after a colon  (value position: "key: <cursor>")
+  --   • first character typed on an indented line (key name position)
   -- -------------------------------------------------------------------------
   {
     "saghen/blink.cmp",
     optional = true,
     opts = function()
+      local group = vim.api.nvim_create_augroup("helm_schemas_completion", { clear = true })
+
+      -- Blank lines and bare list markers: show on enter/movement
       vim.api.nvim_create_autocmd({ "InsertEnter", "CursorMovedI" }, {
-        group   = vim.api.nvim_create_augroup("helm_schemas_completion", { clear = true }),
+        group   = group,
         pattern = { "*.yaml", "*.yml", "*.tpl" },
         callback = function()
-          if vim.api.nvim_get_current_line():match("^%s*%-?%s*$") then
+          local line = vim.api.nvim_get_current_line()
+          if line:match("^%s*%-?%s*$") then
+            vim.schedule(function()
+              local ok, blink = pcall(require, "blink.cmp")
+              if ok then blink.show() end
+            end)
+          end
+        end,
+      })
+
+      -- Trigger after ": " (value position) and on first char of a key
+      vim.api.nvim_create_autocmd("TextChangedI", {
+        group   = group,
+        pattern = { "*.yaml", "*.yml", "*.tpl" },
+        callback = function()
+          local line = vim.api.nvim_get_current_line()
+          local col  = vim.api.nvim_win_get_cursor(0)[2]
+          local before = line:sub(1, col)
+          -- After ": " — value position
+          -- After leading spaces + one word char — start of a key name
+          if before:match(":%s$") or before:match("^%s+%w$") or before:match("^%w$") then
             vim.schedule(function()
               local ok, blink = pcall(require, "blink.cmp")
               if ok then blink.show() end
