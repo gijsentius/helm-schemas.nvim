@@ -168,11 +168,9 @@ local function write_entry(kind, api_version, display_name, schema, source_tag)
   local pos = cluster_pos[key]
   if pos then
     index[pos] = entry
-    io.write("updated [cluster]: " .. display_name .. "\n"); io.flush()
   else
     index[#index + 1] = entry
     cluster_pos[key]  = #index
-    io.write("ok [cluster]: " .. display_name .. "\n"); io.flush()
   end
 end
 
@@ -311,7 +309,6 @@ local new_index = {}
 for i, e in ipairs(index) do
   if ks_positions[i] and covered_keys[(e.kind or "") .. "|" .. (e.apiVersion or "")] then
     pruned = pruned + 1
-    io.write("pruned [" .. e.source .. "]: " .. e.name .. "\n"); io.flush()
   else
     new_index[#new_index + 1] = e
   end

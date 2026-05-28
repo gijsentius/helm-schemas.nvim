@@ -104,6 +104,8 @@ end
 
 local ss_bodies = parallel_fetch(ss_url_map, "SchemaStore")
 local matched = 0
+local added   = 0
+local updated = 0
 
 for fname, body in pairs(ss_bodies) do
   local schema = json_decode(body)
@@ -123,11 +125,11 @@ for fname, body in pairs(ss_bodies) do
       local pos = existing_pos[meta.name]
       if pos then
         index[pos] = entry
-        io.write("updated [schemastore]: " .. meta.name .. "\n"); io.flush()
+        updated = updated + 1
       else
         index[#index + 1] = entry
         existing_pos[meta.name] = #index
-        io.write("ok [schemastore]: " .. meta.name .. "\n"); io.flush()
+        added = added + 1
       end
     end
   end
@@ -140,4 +142,4 @@ end
 local f = io.open(index_path, "w")
 if f then f:write(json_encode(index) or "[]"); f:close() end
 
-io.write("done: " .. matched .. " SchemaStore k8s templates written\n"); io.flush()
+io.write("done: " .. matched .. " SchemaStore templates (" .. added .. " new, " .. updated .. " updated)\n"); io.flush()

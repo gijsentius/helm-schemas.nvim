@@ -105,19 +105,21 @@ end
 
 io.write("yannh: " .. vim.tbl_count(url_map) .. " versioned schemas to fetch\n"); io.flush()
 
-local bodies = parallel_fetch(url_map, "yannh")
+local bodies  = parallel_fetch(url_map, "yannh")
 local matched = 0
+local added   = 0
+local updated = 0
 
 for fname, body in pairs(bodies) do
   local schema = json_decode(body)
   if schema then
     local gvk_list = schema["x-kubernetes-group-version-kind"]
     if type(gvk_list) == "table" and #gvk_list > 0 then
-      local gvk        = gvk_list[1]
+      local gvk         = gvk_list[1]
       local api_version = gvk.group ~= "" and (gvk.group .. "/" .. gvk.version) or gvk.version
       local display_name = gvk.kind .. " (" .. api_version .. ")"
-      local url        = YANNH_BASE .. fname
-      local out        = "k8s_" .. tmpl.to_filename(display_name)
+      local url         = YANNH_BASE .. fname
+      local out         = "k8s_" .. tmpl.to_filename(display_name)
 
       local f = io.open(templates_dir .. "/" .. out, "w")
       if f then f:write(tmpl.to_template(schema, display_name, url)); f:close() end
@@ -135,11 +137,11 @@ for fname, body in pairs(bodies) do
       local pos = existing_pos[display_name]
       if pos then
         index[pos] = entry
-        io.write("updated [k8s]: " .. display_name .. "\n"); io.flush()
+        updated = updated + 1
       else
         index[#index + 1] = entry
         existing_pos[display_name] = #index
-        io.write("ok [k8s]: " .. display_name .. "\n"); io.flush()
+        added = added + 1
       end
       matched = matched + 1
     end
@@ -153,4 +155,4 @@ end
 local f = io.open(index_path, "w")
 if f then f:write(json_encode(index) or "[]"); f:close() end
 
-io.write("done: " .. matched .. " k8s templates written\n"); io.flush()
+io.write("done: " .. matched .. " k8s templates (" .. added .. " new, " .. updated .. " updated)\n"); io.flush()
