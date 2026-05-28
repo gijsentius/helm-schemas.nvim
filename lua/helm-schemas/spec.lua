@@ -102,26 +102,9 @@ return {
         },
 
         -- helm-ls ────────────────────────────────────────────────────────────
-        -- Passes CRD schemas into helm-ls's internal yamlls instance.
-        -- The $schema modeline does not work in helm templates because helm-ls
-        -- strips '$' from Go-template variables in comments.
+        -- Schema injection is handled dynamically by autoschema.lua on LspAttach,
+        -- which sends the correct per-file schema via didChangeConfiguration.
         helm_ls = {
-          before_init = function(_, config)
-            local schemas     = {}
-            local schemas_dir = gen().schemas_dir()
-            for _, fpath in ipairs(vim.fn.glob(schemas_dir .. "/*.json", false, true)) do
-              schemas["file://" .. fpath] = { "*.yaml", "*.yml" }
-            end
-            if vim.tbl_isempty(schemas) then return end
-            local cfg      = config.settings["helm-ls"] or {}
-            local yls      = type(cfg.yamlls)        == "table" and cfg.yamlls        or {}
-            local inner    = type(yls.config)        == "table" and yls.config        or {}
-            local yaml_cfg = type(inner.yaml)        == "table" and inner.yaml        or {}
-            yaml_cfg.schemas = vim.tbl_extend("keep", schemas,
-              type(yaml_cfg.schemas) == "table" and yaml_cfg.schemas or {})
-            inner.yaml = yaml_cfg; yls.config = inner; cfg.yamlls = yls
-            config.settings["helm-ls"] = cfg
-          end,
           settings = {
             ["helm-ls"] = {
               yamlls = { path = "yaml-language-server" },
