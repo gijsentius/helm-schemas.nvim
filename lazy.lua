@@ -10,10 +10,13 @@ return {
     opts = { ensure_installed = { "yaml", "gotmpl" } },
   },
 
-  -- Mason: auto-install language servers
+  -- Mason: auto-install language servers.
+  -- nvim-treesitter listed as dependency so it loads before Mason's install
+  -- callbacks fire, preventing a "No parser for yaml" error on first startup.
   {
     "mason-org/mason.nvim",
     optional = true,
+    dependencies = { { "nvim-treesitter/nvim-treesitter", optional = true } },
     opts = { ensure_installed = { "yaml-language-server", "helm-ls", "yamllint" } },
   },
 

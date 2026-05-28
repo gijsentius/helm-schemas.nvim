@@ -12,31 +12,8 @@ vim.keymap.set("n", "<leader>hc", function() hs.prompt_crd() end,   { desc = "He
 vim.keymap.set("n", "<leader>hC", function() hs.sync_cluster() end, { desc = "Helm: sync CRDs from kubectl context" })
 vim.keymap.set("n", "<leader>hx", function() hs.clear() end,        { desc = "Helm: clear schemas" })
 
--- Configure yamlls: inject helm-schemas JSON files and apply base settings.
--- vim.lsp.config() merges with any existing config (including user or LazyVim settings).
+-- Base yamlls settings (merged by vim.lsp.config; user/LazyVim settings applied on top).
 vim.lsp.config("yamlls", {
-  before_init = function(_, config)
-    local ok, store = pcall(require, "schemastore")
-    if ok then
-      config.settings = config.settings or {}
-      config.settings.yaml = config.settings.yaml or {}
-      config.settings.yaml.schemas = vim.tbl_deep_extend(
-        "force",
-        config.settings.yaml.schemas or {},
-        store.yaml.schemas()
-      )
-    end
-    local gen = require("helm-schemas.generate")
-    local schemas_dir = gen.schemas_dir()
-    config.settings = config.settings or {}
-    config.settings.yaml = config.settings.yaml or {}
-    local schemas = config.settings.yaml.schemas or {}
-    for _, fpath in ipairs(vim.fn.glob(schemas_dir .. "/*.json", false, true)) do
-      local uri = "file://" .. fpath
-      if not schemas[uri] then schemas[uri] = "" end
-    end
-    config.settings.yaml.schemas = schemas
-  end,
   settings = {
     yaml = {
       keyOrdering = false,
@@ -60,8 +37,37 @@ vim.lsp.config("helm_ls", {
   },
 })
 
+-- Attach a LspAttach handler to inject our cluster schemas into yamlls
+-- after it starts. This runs after all before_init callbacks so it doesn't
+-- conflict with LazyVim's lang.yaml schemastore setup.
+vim.api.nvim_create_autocmd("LspAttach", {
+  callback = function(ev)
+    local client = vim.lsp.get_client_by_id(ev.data.client_id)
+    if not client or client.name ~= "yamlls" then return end
+
+    local gen = require("helm-schemas.generate")
+    local schemas_dir = gen.schemas_dir()
+    local schemas = vim.deepcopy(
+      vim.tbl_get(client.config, "settings", "yaml", "schemas") or {}
+    )
+    local changed = false
+    for _, fpath in ipairs(vim.fn.glob(schemas_dir .. "/*.json", false, true)) do
+      local uri = "file://" .. fpath
+      if not schemas[uri] then
+        schemas[uri] = ""
+        changed = true
+      end
+    end
+    if changed then
+      local settings = vim.deepcopy(client.config.settings or {})
+      settings.yaml = settings.yaml or {}
+      settings.yaml.schemas = schemas
+      client.notify("workspace/didChangeConfiguration", { settings = settings })
+    end
+  end,
+})
+
 -- Enable servers if not already enabled by another plugin (e.g. LazyVim).
--- Deferred so all plugin opts are merged before we check.
 vim.api.nvim_create_autocmd("User", {
   pattern = "VeryLazy",
   once = true,
