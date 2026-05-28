@@ -86,27 +86,40 @@ function M.pick()
         return
       end
       local content = f:read("*a"); f:close()
-      vim.api.nvim_set_current_win(target_win)
-      vim.api.nvim_set_current_buf(target_buf)
 
       local line_count = vim.api.nvim_buf_line_count(target_buf)
       local is_empty = line_count == 0
         or (line_count == 1 and vim.api.nvim_buf_get_lines(target_buf, 0, 1, false)[1] == "")
 
+      local function do_insert(mode)
+        vim.api.nvim_set_current_win(target_win)
+        vim.api.nvim_set_current_buf(target_buf)
+        if mode == "replace" then
+          vim.api.nvim_buf_set_lines(target_buf, 0, -1, false, {})
+          vim.cmd("startinsert")
+          vim.snippet.expand(content)
+        else
+          local last = vim.api.nvim_buf_get_lines(target_buf, -2, -1, false)[1] or ""
+          local separator = last == "" and { "---" } or { "", "---" }
+          vim.api.nvim_buf_set_lines(target_buf, -1, -1, false, separator)
+          local new_last = vim.api.nvim_buf_line_count(target_buf)
+          vim.api.nvim_win_set_cursor(target_win, { new_last, 0 })
+          vim.cmd("startinsert")
+          vim.snippet.expand(content)
+        end
+      end
+
       if is_empty then
-        vim.api.nvim_buf_set_lines(target_buf, 0, -1, false, {})
-        vim.cmd("startinsert")
-        vim.snippet.expand(content)
+        do_insert("replace")
       else
-        -- Append a YAML document separator then the new template.
-        local last = vim.api.nvim_buf_get_lines(target_buf, -2, -1, false)[1] or ""
-        local separator = last == "" and { "---" } or { "", "---" }
-        vim.api.nvim_buf_set_lines(target_buf, -1, -1, false, separator)
-        -- Move cursor to end and expand snippet there.
-        local new_last = vim.api.nvim_buf_line_count(target_buf)
-        vim.api.nvim_win_set_cursor(target_win, { new_last, 0 })
-        vim.cmd("startinsert")
-        vim.snippet.expand(content)
+        vim.ui.select(
+          { "Append document (---)", "Replace buffer" },
+          { prompt = "Insert template:" },
+          function(choice)
+            if not choice then return end
+            do_insert(choice == "Replace buffer" and "replace" or "append")
+          end
+        )
       end
     end,
   })
