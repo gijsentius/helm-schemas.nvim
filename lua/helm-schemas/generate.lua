@@ -103,4 +103,43 @@ function M.sync_cluster()
   spawn_worker("cluster_sync_worker.lua", { M.templates_dir(), M.index_path() }, "helm-schemas")
 end
 
+function M.clear()
+  vim.ui.select(
+    { "All schemas", "Cluster schemas only", "Cancel" },
+    { prompt = "Clear helm-schemas data:" },
+    function(choice)
+      if not choice or choice == "Cancel" then return end
+      if choice == "Cluster schemas only" then
+        -- Remove only cluster_* files and prune cluster entries from index.
+        local removed = 0
+        for _, f in ipairs(vim.fn.glob(M.templates_dir() .. "/cluster_*", false, true)) do
+          vim.fn.delete(f); removed = removed + 1
+        end
+        for _, f in ipairs(vim.fn.glob(M.schemas_dir()   .. "/cluster_*", false, true)) do
+          vim.fn.delete(f); removed = removed + 1
+        end
+        local index = M.load_index()
+        local pruned = {}
+        for _, e in ipairs(index) do
+          if e.source ~= "cluster" then pruned[#pruned + 1] = e end
+        end
+        local ok, enc = pcall(vim.json.encode, pruned)
+        if ok then
+          local f = io.open(M.index_path(), "w")
+          if f then f:write(enc); f:close() end
+        end
+        vim.notify(
+          "Cleared cluster schemas (" .. removed .. " file(s) removed, " ..
+          (#index - #pruned) .. " index entries pruned)",
+          vim.log.levels.INFO, { title = "helm-schemas" }
+        )
+      else
+        -- Remove everything under the data directory.
+        vim.fn.delete(M.data_dir(), "rf")
+        vim.notify("Cleared all helm-schemas data", vim.log.levels.INFO, { title = "helm-schemas" })
+      end
+    end
+  )
+end
+
 return M

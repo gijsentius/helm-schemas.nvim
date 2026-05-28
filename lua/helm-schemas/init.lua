@@ -30,5 +30,6 @@ function M.sync_k8s()      require("helm-schemas.generate").sync_k8s() end
 function M.sync_cluster()  require("helm-schemas.generate").sync_cluster() end
 function M.add_crd(source) require("helm-schemas.crd").add_crd(source) end
 function M.prompt_crd()    require("helm-schemas.crd").prompt() end
+function M.clear()         require("helm-schemas.generate").clear() end
 
 return M

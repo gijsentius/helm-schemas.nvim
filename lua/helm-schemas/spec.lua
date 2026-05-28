@@ -198,6 +198,11 @@ return {
         function() hs().sync_cluster() end,
         desc = "Helm: sync CRDs from current kubectl context",
       },
+      {
+        "<leader>hx",
+        function() hs().clear() end,
+        desc = "Helm: clear schemas",
+      },
     },
   },
 
