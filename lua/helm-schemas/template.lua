@@ -59,12 +59,15 @@ local K8S_ALWAYS_REQUIRED = { apiVersion = true, kind = true, metadata = true, s
 -- Top-level fields that are server-managed and should never appear in user YAML.
 local K8S_SERVER_FIELDS = { status = true }
 
--- Fields whose direct children are always emitted active (uncommented), even
--- when the schema marks none of them as required.
-local ALWAYS_ACTIVE_CHILDREN = { metadata = true, spec = true }
+-- (kept for metadata special-casing below)
+local ALWAYS_ACTIVE_CHILDREN = {}
 
 -- For metadata specifically, which child fields to promote as active.
 local METADATA_ALWAYS_ACTIVE = { name = true, namespace = true, labels = true, annotations = true }
+
+-- Fields that always recurse even without required children.
+-- These are structurally important k8s fields that schemas often omit from required[].
+local ALWAYS_RECURSE = { template = true, selector = true }
 
 local tabstop_counter = 0
 local function ts() tabstop_counter = tabstop_counter + 1; return "$" .. tabstop_counter end
@@ -113,9 +116,17 @@ local function walk(schema, depth, lines, max_depth, parent_key)
       if props[k] then req_set[k] = true end
     end
   end
-  -- Inside spec (and other ALWAYS_ACTIVE_CHILDREN): promote all direct children.
-  if parent_key and ALWAYS_ACTIVE_CHILDREN[parent_key] and parent_key ~= "metadata" then
+  -- Promote all children of well-known structural parents so required-less
+  -- k8s schemas still produce useful templates. Limited to one extra level
+  -- past each anchor to avoid exponential expansion.
+  -- selector is special: only promote matchLabels (the useful child).
+  local PROMOTE_CHILDREN = { spec = 1, template = 2 }
+  local max_depth_for_parent = PROMOTE_CHILDREN[parent_key or ""]
+  if max_depth_for_parent and depth <= max_depth_for_parent + 1 then
     for k in pairs(props) do req_set[k] = true end
+  end
+  if parent_key == "selector" and props.matchLabels then
+    req_set.matchLabels = true
   end
 
   local req_keys, opt_keys = {}, {}
@@ -162,11 +173,13 @@ local function walk(schema, depth, lines, max_depth, parent_key)
     if has_real_props(child) then
       local sub_req = child.required
       local has_required_children = type(sub_req) == "table" and #sub_req > 0
-      if has_required_children or K8S_ALWAYS_REQUIRED[k] then
+      if has_required_children or K8S_ALWAYS_REQUIRED[k] or ALWAYS_RECURSE[k] then
         lines[#lines + 1] = indent .. k .. ":"
         walk(child, depth + 1, lines, max_depth, k)
       else
-        lines[#lines + 1] = indent .. k .. ": {}"
+        -- Expanded block so yamlls offers key completions at this position.
+        lines[#lines + 1] = indent .. k .. ":"
+        lines[#lines + 1] = indent .. "  " .. ts()
       end
     elseif ct == "array" then
       lines[#lines + 1] = indent .. k .. ": []"
