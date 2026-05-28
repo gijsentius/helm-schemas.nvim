@@ -72,11 +72,16 @@ return {
                 store.yaml.schemas()
               )
             end
-            local schemas     = config.settings.yaml.schemas or {}
+            -- CRD/cluster schemas are applied via the $schema modeline the
+            -- template inserts. Registering them here with a glob would cause
+            -- yamlls to merge all 175+ schemas for every YAML file, breaking
+            -- completions. The file:// URIs must still be listed so yamlls
+            -- can resolve them when referenced from a modeline.
             local schemas_dir = gen().schemas_dir()
+            local schemas     = config.settings.yaml.schemas or {}
             for _, fpath in ipairs(vim.fn.glob(schemas_dir .. "/*.json", false, true)) do
               local uri = "file://" .. fpath
-              if not schemas[uri] then schemas[uri] = { "*.yaml", "*.yml" } end
+              if not schemas[uri] then schemas[uri] = "" end
             end
             config.settings.yaml.schemas = schemas
           end,
@@ -209,18 +214,30 @@ return {
   -- -------------------------------------------------------------------------
   -- blink.cmp: trigger completions in yaml/helm files
   -- yamlls advertises no trigger characters so blink never auto-fires.
-  -- We trigger on:
-  --   • blank / list-marker lines (new key position after Enter)
-  --   • space after a colon  (value position: "key: <cursor>")
-  --   • first character typed on an indented line (key name position)
+  -- Space is in blink's default show_on_blocked_trigger_characters list,
+  -- which prevents completions after "key: ". We allow it for yaml/helm.
   -- -------------------------------------------------------------------------
   {
     "saghen/blink.cmp",
     optional = true,
-    opts = function()
+    opts = function(_, opts)
+      -- Allow space as a trigger character in yaml/helm files so "key: "
+      -- shows completions. blink blocks ' ' by default.
+      opts.completion = opts.completion or {}
+      opts.completion.trigger = opts.completion.trigger or {}
+      local blocked = opts.completion.trigger.show_on_blocked_trigger_characters
+      if type(blocked) == "table" then
+        local new = {}
+        for _, ch in ipairs(blocked) do
+          if ch ~= " " then new[#new + 1] = ch end
+        end
+        opts.completion.trigger.show_on_blocked_trigger_characters = new
+      elseif blocked == nil then
+        opts.completion.trigger.show_on_blocked_trigger_characters = {}
+      end
+
       local group = vim.api.nvim_create_augroup("helm_schemas_completion", { clear = true })
 
-      -- Blank lines and bare list markers: show on enter/movement
       vim.api.nvim_create_autocmd({ "InsertEnter", "CursorMovedI" }, {
         group   = group,
         pattern = { "*.yaml", "*.yml", "*.tpl" },
@@ -235,7 +252,6 @@ return {
         end,
       })
 
-      -- Trigger after ": " (value position) and on first char of a key
       vim.api.nvim_create_autocmd("TextChangedI", {
         group   = group,
         pattern = { "*.yaml", "*.yml", "*.tpl" },
@@ -243,8 +259,6 @@ return {
           local line = vim.api.nvim_get_current_line()
           local col  = vim.api.nvim_win_get_cursor(0)[2]
           local before = line:sub(1, col)
-          -- After ": " — value position
-          -- After leading spaces + one word char — start of a key name
           if before:match(":%s$") or before:match("^%s+%w$") or before:match("^%w$") then
             vim.schedule(function()
               local ok, blink = pcall(require, "blink.cmp")
@@ -253,6 +267,8 @@ return {
           end
         end,
       })
+
+      return opts
     end,
   },
 }
