@@ -87,9 +87,12 @@ function M.pick()
       end
       local content = f:read("*a"); f:close()
 
-      local line_count = vim.api.nvim_buf_line_count(target_buf)
+      local lines_in_buf = vim.api.nvim_buf_get_lines(target_buf, 0, -1, false)
+      local line_count = #lines_in_buf
       local is_empty = line_count == 0
-        or (line_count == 1 and vim.api.nvim_buf_get_lines(target_buf, 0, 1, false)[1] == "")
+        or (line_count == 1 and lines_in_buf[1] == "")
+
+      vim.notify("buf=" .. target_buf .. " lines=" .. line_count .. " empty=" .. tostring(is_empty), vim.log.levels.INFO)
 
       local function do_insert(mode)
         vim.api.nvim_set_current_win(target_win)
