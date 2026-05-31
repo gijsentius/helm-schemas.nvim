@@ -177,9 +177,10 @@ local function walk(schema, depth, lines, max_depth, parent_key)
         lines[#lines + 1] = indent .. k .. ":"
         walk(child, depth + 1, lines, max_depth, k)
       else
-        -- Expanded block so yamlls offers key completions at this position.
+        -- Leave an empty indented line so the cursor lands at the right column
+        -- and yamlls key-completions fire without double-indenting.
         lines[#lines + 1] = indent .. k .. ":"
-        lines[#lines + 1] = indent .. "  " .. ts()
+        lines[#lines + 1] = indent .. "  "
       end
     elseif ct == "array" then
       lines[#lines + 1] = indent .. k .. ": []"

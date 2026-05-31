@@ -100,8 +100,13 @@ function M.pick()
           vim.cmd("startinsert")
           vim.snippet.expand(content)
         else
+          -- Build a clean document separator.  The previous document may or may
+          -- not end with a blank line; normalise to:
+          --   <blank line if prev last line is non-empty>
+          --   ---
+          --   <blank line so snippet starts on a fresh line>
           local last = vim.api.nvim_buf_get_lines(target_buf, -2, -1, false)[1] or ""
-          local separator = last == "" and { "---" } or { "", "---" }
+          local separator = last == "" and { "---", "" } or { "", "---", "" }
           vim.api.nvim_buf_set_lines(target_buf, -1, -1, false, separator)
           local new_last = vim.api.nvim_buf_line_count(target_buf)
           vim.api.nvim_win_set_cursor(target_win, { new_last, 0 })
