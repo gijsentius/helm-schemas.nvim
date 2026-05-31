@@ -6,7 +6,6 @@
 -- Or configure manually using the individual require("helm-schemas") API.
 
 local function hs() return require("helm-schemas") end
-local function gen() return require("helm-schemas.generate") end
 
 return {
 
@@ -63,6 +62,10 @@ return {
         -- lazy.nvim's merge() overwrites functions rather than chaining them,
         -- so we must call SchemaStore ourselves here.
         yamlls = {
+          -- Also attach yamlls to helm files so schema injection via
+          -- autoschema.lua works (helm_ls does not reliably forward
+          -- didChangeConfiguration schemas to its internal yamlls process).
+          filetypes = { "yaml", "yaml.docker-compose", "yaml.gitlab", "yaml.helm-values", "helm" },
           before_init = function(_, config)
             local ok, store = pcall(require, "schemastore")
             if ok then
@@ -72,18 +75,10 @@ return {
                 store.yaml.schemas()
               )
             end
-            -- CRD/cluster schemas are applied via the $schema modeline the
-            -- template inserts. Registering them here with a glob would cause
-            -- yamlls to merge all 175+ schemas for every YAML file, breaking
-            -- completions. The file:// URIs must still be listed so yamlls
-            -- can resolve them when referenced from a modeline.
-            local schemas_dir = gen().schemas_dir()
-            local schemas     = config.settings.yaml.schemas or {}
-            for _, fpath in ipairs(vim.fn.glob(schemas_dir .. "/*.json", false, true)) do
-              local uri = "file://" .. fpath
-              if not schemas[uri] then schemas[uri] = "" end
-            end
-            config.settings.yaml.schemas = schemas
+            -- Per-file schemas are injected dynamically by autoschema.lua
+            -- via didChangeConfiguration (clean-slate approach). Do not
+            -- register file:// schemas here — that would merge all 175+
+            -- schemas into every file and break completions.
           end,
           settings = {
             yaml = {
@@ -91,10 +86,6 @@ return {
               validate     = true,
               schemaStore  = { enable = false, url = "" },
               schemas = {
-                -- All core k8s resources via yannh master-standalone-strict.
-                ["https://raw.githubusercontent.com/yannh/kubernetes-json-schema/master/master-standalone-strict/all.json"] = {
-                  "*.yaml", "*.yml",
-                },
                 ["https://json.schemastore.org/chart.json"] = "Chart.yaml",
               },
             },
@@ -226,7 +217,13 @@ return {
         pattern = { "*.yaml", "*.yml", "*.tpl" },
         callback = function()
           local line = vim.api.nvim_get_current_line()
-          if line:match("^%s*%-?%s*$") then
+          local col  = vim.api.nvim_win_get_cursor(0)[2]
+          local before = line:sub(1, col)
+          -- Trigger on: blank/dash lines, or cursor sitting after "key:" / "key: {}" / "key: []"
+          local should_show = line:match("^%s*%-?%s*$")
+            or before:match(":%s*$")
+            or before:match(":%s*[{%[]%s*[}%]]%s*$")
+          if should_show then
             vim.schedule(function()
               local ok, blink = pcall(require, "blink.cmp")
               if ok then blink.show() end
