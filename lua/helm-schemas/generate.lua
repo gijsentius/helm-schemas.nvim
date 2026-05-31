@@ -11,10 +11,12 @@ function M._set_data_dir(path)
   _data_dir = path
 end
 
-function M.data_dir()      return data_dir() end
-function M.templates_dir() return data_dir() .. "/templates" end
-function M.schemas_dir()   return data_dir() .. "/schemas" end
-function M.index_path()    return data_dir() .. "/index.json" end
+function M.data_dir()         return data_dir() end
+function M.templates_dir()    return data_dir() .. "/templates" end
+function M.schemas_dir()      return data_dir() .. "/schemas" end
+function M.kubeconform_dir()  return data_dir() .. "/kubeconform" end
+function M.cache_dir()        return data_dir() .. "/cache" end
+function M.index_path()       return data_dir() .. "/index.json" end
 
 function M.load_index()
   local f = io.open(M.index_path(), "r")
@@ -92,6 +94,12 @@ function M.sync_k8s()
   spawn_worker("k8s_worker.lua", { M.templates_dir(), M.index_path() }, "helm-schemas")
 end
 
+function M.sync_datreeio()
+  vim.fn.mkdir(M.templates_dir(), "p")
+  vim.notify("Fetching datreeio/CRDs-catalog…", vim.log.levels.INFO, { title = "helm-schemas" })
+  spawn_worker("datreeio_worker.lua", { M.templates_dir(), M.index_path() }, "helm-schemas")
+end
+
 function M.sync_cluster()
   if vim.fn.exepath("kubectl") == "" then
     vim.notify("kubectl not found in PATH", vim.log.levels.ERROR, { title = "helm-schemas" })
@@ -115,12 +123,24 @@ function M.clear()
       if not choice or choice == "Cancel" then return end
       if choice == "Cluster schemas only" then
         -- Remove only cluster_* files and prune cluster entries from index.
+        -- Also remove any stale kubeconform symlinks that pointed at cluster schemas.
         local removed = 0
-        for _, f in ipairs(vim.fn.glob(M.templates_dir() .. "/cluster_*", false, true)) do
+        for _, f in ipairs(vim.fn.glob(M.templates_dir()    .. "/cluster_*", false, true)) do
           vim.fn.delete(f); removed = removed + 1
         end
-        for _, f in ipairs(vim.fn.glob(M.schemas_dir()   .. "/cluster_*", false, true)) do
+        for _, f in ipairs(vim.fn.glob(M.schemas_dir()      .. "/cluster_*", false, true)) do
           vim.fn.delete(f); removed = removed + 1
+        end
+        -- Prune broken symlinks from kubeconform/ (targets no longer exist).
+        -- vim.fn.glob skips broken symlinks, so use find instead.
+        local kc_dir = M.kubeconform_dir()
+        if vim.fn.isdirectory(kc_dir) == 1 then
+          local broken = vim.fn.systemlist(
+            "find -L " .. vim.fn.shellescape(kc_dir) .. " -maxdepth 1 -name '*.json' -type l"
+          )
+          for _, f in ipairs(broken) do
+            vim.fn.delete(f); removed = removed + 1
+          end
         end
         local index = M.load_index()
         local pruned = {}

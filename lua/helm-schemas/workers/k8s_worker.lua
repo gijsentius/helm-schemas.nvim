@@ -12,7 +12,30 @@ if not templates_dir or not index_path then
   os.exit(1)
 end
 
-local tmpl = require("helm-schemas.template")
+local tmpl            = require("helm-schemas.template")
+local data_dir        = vim.fn.fnamemodify(templates_dir, ":h")
+local schemas_dir     = data_dir .. "/schemas"
+local kubeconform_dir = data_dir .. "/kubeconform"
+-- Raw downloaded schema files are cached here so repeated sync_k8s calls
+-- skip network fetches for schemas that are already on disk.
+local cache_dir       = data_dir .. "/cache/yannh"
+os.execute("mkdir -p " .. vim.fn.shellescape(schemas_dir))
+os.execute("mkdir -p " .. vim.fn.shellescape(kubeconform_dir))
+os.execute("mkdir -p " .. vim.fn.shellescape(cache_dir))
+
+local function write_kc_link(kind, api_version, schema_fpath)
+  local group = api_version:match("^(.+)/") or ""
+  local ver   = api_version:match("[^/]+$")
+  local name
+  if group ~= "" then
+    name = kind:lower() .. "-" .. group:lower() .. "-" .. ver:lower() .. ".json"
+  else
+    name = kind:lower() .. "-" .. ver:lower() .. ".json"
+  end
+  local link = kubeconform_dir .. "/" .. name
+  os.remove(link)
+  os.execute("ln -s " .. vim.fn.shellescape(schema_fpath) .. " " .. vim.fn.shellescape(link))
+end
 
 local YANNH_BASE = "https://raw.githubusercontent.com/yannh/kubernetes-json-schema/master/master-standalone-strict/"
 local YANNH_API  = "https://api.github.com/repos/yannh/kubernetes-json-schema/contents/master-standalone-strict"
@@ -82,7 +105,7 @@ for i, e in ipairs(index) do
 end
 
 -- ---------------------------------------------------------------------------
--- Fetch listing and download all versioned schemas in parallel
+-- Fetch listing and download only uncached schemas
 -- ---------------------------------------------------------------------------
 
 io.write("Fetching yannh/kubernetes-json-schema listing…\n"); io.flush()
@@ -95,17 +118,38 @@ end
 local version_pat = "%-v%d[a-z0-9]*%.json$"
 local skip = { ["all.json"] = true, ["_definitions.json"] = true }
 
-local url_map = {}
+-- Separate schemas into already-cached (read from disk) and need-fetch (download).
+local url_map   = {}   -- fname -> url  for schemas not yet cached
+local cached    = {}   -- fname -> body for schemas already on disk
 for _, entry in ipairs(listing) do
   local name = entry.name
   if not skip[name] and name:match(version_pat) then
-    url_map[name] = YANNH_BASE .. name
+    local cache_path = cache_dir .. "/" .. name
+    local cf = io.open(cache_path, "r")
+    if cf then
+      cached[name] = cf:read("*a"); cf:close()
+    else
+      url_map[name] = YANNH_BASE .. name
+    end
   end
 end
 
-io.write("yannh: " .. vim.tbl_count(url_map) .. " versioned schemas to fetch\n"); io.flush()
+local cache_hits = vim.tbl_count(cached)
+local need_fetch = vim.tbl_count(url_map)
+io.write("yannh: " .. cache_hits .. " cached, " .. need_fetch .. " to fetch\n"); io.flush()
 
-local bodies  = parallel_fetch(url_map, "yannh")
+-- Download only the missing schemas, then persist them to cache.
+local fetched = need_fetch > 0 and parallel_fetch(url_map, "yannh") or {}
+for fname, body in pairs(fetched) do
+  if body and body ~= "" then
+    local cf = io.open(cache_dir .. "/" .. fname, "w")
+    if cf then cf:write(body); cf:close() end
+    cached[fname] = body
+  end
+end
+
+-- Merge cached + freshly fetched into a single bodies table.
+local bodies = cached
 local matched = 0
 local added   = 0
 local updated = 0
@@ -123,6 +167,18 @@ for fname, body in pairs(bodies) do
 
       local f = io.open(templates_dir .. "/" .. out, "w")
       if f then f:write(tmpl.to_template(schema, display_name, url)); f:close() end
+
+      -- Save schema JSON locally and write kubeconform symlink.
+      local schema_fname = "k8s_" .. tmpl.to_filename(display_name):gsub("%.yaml$", ".json")
+      local schema_fpath = schemas_dir .. "/" .. schema_fname
+      schema["$schema"] = "http://json-schema.org/draft-07/schema#"
+      local sf = io.open(schema_fpath, "w")
+      if sf then
+        local ok_enc, enc = pcall(vim.json.encode, schema)
+        if ok_enc then sf:write(enc) end
+        sf:close()
+      end
+      write_kc_link(gvk.kind, api_version, schema_fpath)
 
       local entry = {
         name       = display_name,

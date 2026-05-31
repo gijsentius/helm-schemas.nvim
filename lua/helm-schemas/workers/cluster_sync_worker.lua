@@ -14,10 +14,28 @@ if not templates_dir or not index_path then
   os.exit(1)
 end
 
-local tmpl        = require("helm-schemas.template")
-local schemas_dir = vim.fn.fnamemodify(templates_dir, ":h") .. "/schemas"
+local tmpl             = require("helm-schemas.template")
+local data_dir         = vim.fn.fnamemodify(templates_dir, ":h")
+local schemas_dir      = data_dir .. "/schemas"
+local kubeconform_dir  = data_dir .. "/kubeconform"
 os.execute("mkdir -p " .. vim.fn.shellescape(schemas_dir))
+os.execute("mkdir -p " .. vim.fn.shellescape(kubeconform_dir))
 os.execute("mkdir -p " .. vim.fn.shellescape(templates_dir))
+
+-- Write a kubeconform-compatible symlink: {kind}-{group}-{version}.json -> schema_fpath
+local function write_kc_link(kind, api_version, schema_fpath)
+  local group = api_version:match("^(.+)/") or ""
+  local ver   = api_version:match("[^/]+$")
+  local name
+  if group ~= "" then
+    name = kind:lower() .. "-" .. group:lower() .. "-" .. ver:lower() .. ".json"
+  else
+    name = kind:lower() .. "-" .. ver:lower() .. ".json"
+  end
+  local link = kubeconform_dir .. "/" .. name
+  os.remove(link)
+  os.execute("ln -s " .. vim.fn.shellescape(schema_fpath) .. " " .. vim.fn.shellescape(link))
+end
 
 -- ---------------------------------------------------------------------------
 -- Helpers
@@ -101,8 +119,23 @@ local function inline_refs(schema, all_components)
       if k == "$ref" and type(v) == "string" then
         local name = v:match("^#/components/schemas/(.+)$")
         out[k] = name and ("#/definitions/" .. name) or v
+      elseif k == "default" then
+        -- Drop default values: vim.json round-trips empty objects as []
+        -- which makes yamlls treat object fields as arrays, breaking completions.
       else
         out[k] = rewrite(v)
+      end
+    end
+    -- Flatten allOf:[{$ref:X}] -> {$ref:X} so yamlls resolves completions correctly.
+    -- yamlls sometimes fails to traverse a bare allOf wrapper with no properties.
+    if out["allOf"] and not out["properties"] and not out["$ref"] then
+      local allof = out["allOf"]
+      if type(allof) == "table" and #allof == 1 and type(allof[1]) == "table" and allof[1]["$ref"] then
+        local flat = { ["$ref"] = allof[1]["$ref"] }
+        for k, v in pairs(out) do
+          if k ~= "allOf" then flat[k] = v end
+        end
+        return flat
       end
     end
     return out
@@ -154,12 +187,14 @@ local function write_entry(kind, api_version, display_name, schema, source_tag)
   end
   if #top_required > 0 then schema.required = top_required end
 
+  schema["$schema"] = "http://json-schema.org/draft-07/schema#"
   local sf = io.open(schema_fpath, "w")
   if sf then
     local ok_enc, enc = pcall(vim.json.encode, schema)
     if ok_enc then sf:write(enc) end
     sf:close()
   end
+  write_kc_link(kind, api_version, schema_fpath)
 
   local fpath = templates_dir .. "/" .. fname_base
   local tf = io.open(fpath, "w")

@@ -13,9 +13,26 @@ if not source or not templates_dir or not index_path then
   os.exit(1)
 end
 
-local tmpl        = require("helm-schemas.template")
-local schemas_dir = vim.fn.fnamemodify(templates_dir, ":h") .. "/schemas"
+local tmpl            = require("helm-schemas.template")
+local data_dir        = vim.fn.fnamemodify(templates_dir, ":h")
+local schemas_dir     = data_dir .. "/schemas"
+local kubeconform_dir = data_dir .. "/kubeconform"
 os.execute("mkdir -p " .. vim.fn.shellescape(schemas_dir))
+os.execute("mkdir -p " .. vim.fn.shellescape(kubeconform_dir))
+
+local function write_kc_link(kind, api_version, schema_fpath)
+  local group = api_version:match("^(.+)/") or ""
+  local ver   = api_version:match("[^/]+$")
+  local name
+  if group ~= "" then
+    name = kind:lower() .. "-" .. group:lower() .. "-" .. ver:lower() .. ".json"
+  else
+    name = kind:lower() .. "-" .. ver:lower() .. ".json"
+  end
+  local link = kubeconform_dir .. "/" .. name
+  os.remove(link)
+  os.execute("ln -s " .. vim.fn.shellescape(schema_fpath) .. " " .. vim.fn.shellescape(link))
+end
 
 local yq = vim.fn.exepath("yq")
 if yq == "" then
@@ -134,6 +151,7 @@ for i = 0, doc_count - 1 do
     local schema_fpath = schemas_dir .. "/" .. schema_fname
     local schema_uri   = "file://" .. schema_fpath
     do
+      schema["$schema"] = "http://json-schema.org/draft-07/schema#"
       local sf = io.open(schema_fpath, "w")
       if sf then
         local ok_enc, enc = pcall(vim.json.encode, schema)
@@ -141,6 +159,7 @@ for i = 0, doc_count - 1 do
         sf:close()
       end
     end
+    write_kc_link(kind, api_version, schema_fpath)
 
     local fname = "crd_" .. tmpl.to_filename(display_name)
     local f = io.open(templates_dir .. "/" .. fname, "w")
