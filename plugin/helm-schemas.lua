@@ -54,3 +54,116 @@ vim.api.nvim_create_autocmd("User", {
     end
   end,
 })
+
+-- ---------------------------------------------------------------------------
+-- BufWritePre: strip trailing whitespace, collapse 3+ blank lines to 2,
+-- and remove trailing blank lines at EOF so yamllint never flags them.
+-- ---------------------------------------------------------------------------
+vim.api.nvim_create_autocmd("BufWritePre", {
+  group = vim.api.nvim_create_augroup("helm_schemas_yaml_clean", { clear = true }),
+  pattern = { "*.yaml", "*.yml", "*.tpl" },
+  callback = function()
+    local view = vim.fn.winsaveview()
+    local buf  = vim.api.nvim_get_current_buf()
+    vim.cmd([[silent! %s/\s\+$//e]])
+    local i, blanks = 1, 0
+    while i <= vim.api.nvim_buf_line_count(buf) do
+      local line = vim.api.nvim_buf_get_lines(buf, i - 1, i, false)[1]
+      if line == "" then
+        blanks = blanks + 1
+        if blanks > 2 then
+          vim.api.nvim_buf_set_lines(buf, i - 1, i, false, {})
+        else
+          i = i + 1
+        end
+      else
+        blanks = 0
+        i = i + 1
+      end
+    end
+    local last = vim.api.nvim_buf_line_count(buf)
+    while last > 1 and vim.api.nvim_buf_get_lines(buf, last - 1, last, false)[1] == "" do
+      vim.api.nvim_buf_set_lines(buf, last - 1, last, false, {})
+      last = last - 1
+    end
+    vim.fn.winrestview(view)
+  end,
+})
+
+-- ---------------------------------------------------------------------------
+-- BufWritePost: run yamllint + kubeconform.
+-- For ft=helm files, render via `helm template -s` first so linters receive
+-- plain YAML instead of Go template syntax.
+-- ---------------------------------------------------------------------------
+
+local function helm_render(bufnr)
+  if vim.fn.exepath("helm") == "" then return nil end
+  local fpath = vim.api.nvim_buf_get_name(bufnr)
+  if fpath == "" then return nil end
+  local chart_root, d = nil, vim.fn.fnamemodify(fpath, ":h")
+  while d ~= "/" do
+    if vim.fn.filereadable(d .. "/Chart.yaml") == 1 then chart_root = d; break end
+    d = vim.fn.fnamemodify(d, ":h")
+  end
+  if not chart_root then return nil end
+  local tmpl_rel = fpath:sub(#chart_root + 2)
+  local cmd = "helm template "
+    .. vim.fn.shellescape(vim.fn.fnamemodify(chart_root, ":t"))
+    .. " " .. vim.fn.shellescape(chart_root)
+    .. " -s " .. vim.fn.shellescape(tmpl_rel)
+    .. " 2>&1"
+  local out = vim.fn.system(cmd)
+  local ns  = vim.api.nvim_create_namespace("helm_render_error")
+  if vim.v.shell_error ~= 0 then
+    vim.diagnostic.set(ns, bufnr, {{
+      lnum=0, end_lnum=0, col=0, end_col=0,
+      severity=vim.diagnostic.severity.ERROR,
+      source="helm", message=out:gsub("^Error: ", ""):gsub("\n.*", ""),
+    }})
+    return nil
+  end
+  vim.diagnostic.set(ns, bufnr, {})
+  return out
+end
+
+vim.api.nvim_create_autocmd("BufWritePost", {
+  group = vim.api.nvim_create_augroup("helm_schemas_lint", { clear = true }),
+  pattern = { "*.yaml", "*.yml", "*.tpl" },
+  callback = function()
+    local lint_ok, lint = pcall(require, "lint")
+    if not lint_ok then return end
+
+    if not lint.linters.kubeconform then
+      local ok, linter_mod = pcall(require, "helm-schemas.linter")
+      if ok then lint.linters.kubeconform = linter_mod.linter() end
+    end
+
+    local buf = vim.api.nvim_get_current_buf()
+    local ft  = vim.bo[buf].filetype
+
+    if ft == "helm" then
+      local rendered = helm_render(buf)
+      if not rendered then return end
+      if vim.fn.exepath("kubeconform") ~= "" then
+        local ok, linter_mod = pcall(require, "helm-schemas.linter")
+        if not ok then return end
+        local kc_def = linter_mod.linter()
+        local schema_args = ""
+        for i = 1, #kc_def.args - 1 do
+          schema_args = schema_args .. " " .. vim.fn.shellescape(kc_def.args[i])
+        end
+        local tmp = vim.fn.tempname() .. ".yaml"
+        vim.fn.writefile(vim.fn.split(rendered, "\n"), tmp)
+        local kc_out = vim.fn.system("kubeconform" .. schema_args .. " " .. vim.fn.shellescape(tmp))
+        vim.fn.delete(tmp)
+        local diags = linter_mod.parse_output(kc_out, buf)
+        vim.diagnostic.set(vim.api.nvim_create_namespace("kubeconform"), buf, diags or {})
+      end
+    else
+      lint.try_lint()
+      if vim.fn.exepath("kubeconform") ~= "" then
+        lint.try_lint("kubeconform")
+      end
+    end
+  end,
+})
