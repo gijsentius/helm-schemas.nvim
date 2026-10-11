@@ -8,7 +8,6 @@ local hs = require("helm-schemas")
 vim.keymap.set("n", "<leader>hs", function() hs.pick() end,           { desc = "Helm: insert schema template" })
 vim.keymap.set("n", "<leader>hS", function() hs.generate() end,       { desc = "Helm: sync SchemaStore templates" })
 vim.keymap.set("n", "<leader>hk", function() hs.sync_k8s() end,       { desc = "Helm: sync core k8s schemas (yannh, cached)" })
-vim.keymap.set("n", "<leader>hd", function() hs.sync_datreeio() end,  { desc = "Helm: sync CRD schemas (datreeio catalog, cached)" })
 vim.keymap.set("n", "<leader>hc", function() hs.sync_cluster() end,   { desc = "Helm: sync CRDs from kubectl context" })
 vim.keymap.set("n", "<leader>hC", function() hs.prompt_crd() end,     { desc = "Helm: add CRD from file or URL" })
 vim.keymap.set("n", "<leader>hx", function() hs.clear() end,          { desc = "Helm: clear schemas" })
@@ -17,6 +16,20 @@ vim.keymap.set("n", "<leader>hx", function() hs.clear() end,          { desc = "
 -- autoschema.lua can inject the correct per-file schema.
 vim.lsp.config("yamlls", {
   filetypes = { "yaml", "yaml.docker-compose", "yaml.gitlab", "yaml.helm-values", "helm" },
+  -- Disable auto-format (LazyVim's vim.b.autoformat) for k8s manifests: they may
+  -- contain Go template syntax ({{ }}) which formatters corrupt. Detected by
+  -- top-level kind/apiVersion keys in the first 20 lines of the buffer.
+  on_attach = function(_, bufnr)
+    local has_kind, has_api = false, false
+    for _, line in ipairs(vim.api.nvim_buf_get_lines(bufnr, 0, 20, false)) do
+      if line:match("^kind:%s*%S") then has_kind = true end
+      if line:match("^apiVersion:%s*%S") then has_api = true end
+      if has_kind and has_api then
+        vim.b[bufnr].autoformat = false
+        return
+      end
+    end
+  end,
   settings = {
     yaml = {
       keyOrdering = false,
