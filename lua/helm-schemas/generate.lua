@@ -94,12 +94,6 @@ function M.sync_k8s()
   spawn_worker("k8s_worker.lua", { M.templates_dir(), M.index_path() }, "helm-schemas")
 end
 
-function M.sync_datreeio()
-  vim.fn.mkdir(M.templates_dir(), "p")
-  vim.notify("Fetching datreeio/CRDs-catalog…", vim.log.levels.INFO, { title = "helm-schemas" })
-  spawn_worker("datreeio_worker.lua", { M.templates_dir(), M.index_path() }, "helm-schemas")
-end
-
 function M.sync_cluster()
   if vim.fn.exepath("kubectl") == "" then
     vim.notify("kubectl not found in PATH", vim.log.levels.ERROR, { title = "helm-schemas" })

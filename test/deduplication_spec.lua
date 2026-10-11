@@ -10,8 +10,8 @@
 --
 -- Yannh errors are caused by kubeconform's "-schema-location default" flag,
 -- which fetches from yannh online when a local schema is missing.  In network-
--- restricted environments this produces noisy errors.  The fix: replace
--- "default" with the datreeio CRDs catalog URL, keeping local schemas first.
+-- restricted environments this produces noisy errors.  The fix: use only the
+-- local kubeconform dir and -ignore-missing-schemas.
 
 local function plugin_dir()
   local src = debug.getinfo(1, "S").source:match("@?(.+)")
@@ -112,20 +112,6 @@ describe("linter.lua kubeconform schema-location args", function()
       .. "network errors in restricted environments")
   end)
 
-  it("args contain datreeio CRDs catalog as fallback schema-location", function()
-    local ok, linter_mod = pcall(require, "helm-schemas.linter")
-    if not ok then pending("helm-schemas.linter not loadable"); return end
-    local args = linter_mod.linter().args
-    local has_datreeio = false
-    for i, v in ipairs(args) do
-      if v == "-schema-location" and (args[i+1] or ""):match("datreeio") then
-        has_datreeio = true; break
-      end
-    end
-    assert.is_true(has_datreeio,
-      "datreeio CRDs catalog must be a -schema-location fallback")
-  end)
-
   it("args contain -ignore-missing-schemas (prevents errors for unknown CRDs)", function()
     local ok, linter_mod = pcall(require, "helm-schemas.linter")
     if not ok then pending("helm-schemas.linter not loadable"); return end
@@ -137,25 +123,15 @@ describe("linter.lua kubeconform schema-location args", function()
     assert.is_true(found, "-ignore-missing-schemas must be present")
   end)
 
-  it("schema-location order: local kubeconform dir before datreeio (local takes priority)", function()
+  it("only one schema-location is present (local kubeconform dir)", function()
     local ok, linter_mod = pcall(require, "helm-schemas.linter")
     if not ok then pending("helm-schemas.linter not loadable"); return end
     local args = linter_mod.linter().args
-    local positions = {}
+    local count = 0
     for i, v in ipairs(args) do
-      if v == "-schema-location" then
-        local loc = args[i+1] or ""
-        if loc:match("^file://") and loc:match("kubeconform") then
-          positions.local_kc = i
-        elseif loc:match("datreeio") then
-          positions.datreeio = i
-        end
-      end
+      if v == "-schema-location" then count = count + 1 end
     end
-    assert.is_not_nil(positions.local_kc, "local kubeconform schema-location missing")
-    assert.is_not_nil(positions.datreeio,  "datreeio schema-location missing")
-    assert.is_true(positions.local_kc < positions.datreeio,
-      "local kubeconform schema-location must come before datreeio fallback")
+    assert.equals(1, count, "exactly one -schema-location (local kubeconform dir) expected")
   end)
 
 end)
