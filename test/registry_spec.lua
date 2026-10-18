@@ -3,7 +3,7 @@
 -- 1. Smart Detection:    GVK extracted from buffer content (not filename/extension)
 -- 2. Multi-Document:     composite anyOf schema generated for multi-doc files
 -- 3. Dynamic State:      schema detached when buffer emptied; reattached on new content
--- 4. Local Cache:        yannh and datreeio schemas written to cache dir; re-runs skip download
+-- 4. Local Cache:        yannh schemas written to cache dir; re-runs skip download
 -- 5. No Modeline:        schema_state drives workspace/configuration, no $schema comment needed
 
 local function plugin_dir()
@@ -274,7 +274,7 @@ end)
 -- 4. Local Schema Cache
 -- ---------------------------------------------------------------------------
 
-describe("local schema cache (yannh and datreeio)", function()
+describe("local schema cache (yannh)", function()
 
   it("yannh cache directory is under data_dir/cache/yannh", function()
     local expected = data_dir() .. "/cache/yannh"
@@ -300,47 +300,6 @@ describe("local schema cache (yannh and datreeio)", function()
       "k8s_worker.lua must reference cache_dir")
     assert.is_truthy(content:match('io%.open%(cache'),
       "k8s_worker.lua must check for cached file before downloading")
-  end)
-
-  it("datreeio_worker.lua exists", function()
-    local worker = plugin_dir() .. "/lua/helm-schemas/workers/datreeio_worker.lua"
-    assert.equals(1, vim.fn.filereadable(worker),
-      "datreeio_worker.lua not found — run :lua require('helm-schemas').sync_datreeio()")
-  end)
-
-  it("datreeio_worker.lua defines a cache_dir under data/cache/datreeio", function()
-    local worker = plugin_dir() .. "/lua/helm-schemas/workers/datreeio_worker.lua"
-    local f = io.open(worker, "r"); assert.is_not_nil(f)
-    local content = f:read("*a"); f:close()
-    assert.is_truthy(content:match('cache/datreeio'),
-      "datreeio_worker.lua must cache under data/cache/datreeio")
-  end)
-
-  it("datreeio_worker.lua uses git tree API for single-request catalog listing", function()
-    local worker = plugin_dir() .. "/lua/helm-schemas/workers/datreeio_worker.lua"
-    local f = io.open(worker, "r"); local content = f:read("*a"); f:close()
-    assert.is_truthy(content:match('git/trees'),
-      "datreeio_worker.lua must use the git tree API to list schemas in one request")
-  end)
-
-  it("datreeio_worker.lua checks cache before downloading each schema", function()
-    local worker = plugin_dir() .. "/lua/helm-schemas/workers/datreeio_worker.lua"
-    local f = io.open(worker, "r"); local content = f:read("*a"); f:close()
-    assert.is_truthy(content:match('io%.open%(cache'),
-      "datreeio_worker.lua must check cache before fetching each schema")
-  end)
-
-  it("datreeio_worker.lua uses parallel curl for batch downloads", function()
-    local worker = plugin_dir() .. "/lua/helm-schemas/workers/datreeio_worker.lua"
-    local f = io.open(worker, "r"); local content = f:read("*a"); f:close()
-    assert.is_truthy(content:match('curl.*parallel'),
-      "datreeio_worker.lua must use parallel curl for batch downloads")
-  end)
-
-  it("generate.lua exposes sync_datreeio()", function()
-    local ok, gen = pcall(require, "helm-schemas.generate")
-    if not ok then pending("helm-schemas.generate not loadable"); return end
-    assert.equals("function", type(gen.sync_datreeio))
   end)
 
   it("cached yannh schemas are not re-downloaded on second sync (simulation)", function()

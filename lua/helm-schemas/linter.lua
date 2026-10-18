@@ -173,9 +173,6 @@ function M.linter()
       "-ignore-missing-schemas",
       -- Local cluster/CRD schemas synced by this plugin (highest priority).
       "-schema-location", "file://" .. kc_dir .. "/{{.ResourceKind}}-{{.Group}}-{{.ResourceAPIVersion}}.json",
-      -- datreeio CRDs catalog as online fallback (no yannh/default to avoid
-      -- noisy network errors in restricted environments).
-      "-schema-location", "https://raw.githubusercontent.com/datreeio/CRDs-catalog/main/{{.Group}}/{{.ResourceKind}}_{{.ResourceAPIVersion}}.json",
       "-",
     },
     parser = function(output, bufnr)

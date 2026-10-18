@@ -1,7 +1,7 @@
 -- Tests for the schema override/priority system and completion deduplication.
 --
 -- Priority order (lowest number wins):
---   cluster(1) > kubernetes/yannh(2) > crd(3) > datreeio(4) > schemastore(5) > unknown(9)
+--   cluster(1) > kubernetes/yannh(2) > crd(3) > schemastore(4) > unknown(9)
 --
 -- Rules:
 --   1. When the same kind|apiVersion appears in multiple sources, only the
@@ -19,8 +19,7 @@ local PRIORITIES = {
   cluster     = 1,
   kubernetes  = 2,
   crd         = 3,
-  datreeio    = 4,
-  schemastore = 5,
+  schemastore = 4,
 }
 
 local function build_lookup(index, schemas_dir)
@@ -96,9 +95,9 @@ describe("schema priority: single winner per kind|apiVersion", function()
       "cluster must win over kubernetes for Deployment (apps/v1)")
   end)
 
-  it("cluster beats datreeio for the same CRD", function()
+  it("cluster beats user-added crd for the same CRD", function()
     local index = {
-      entry("Certificate", "cert-manager.io/v1", "datreeio"),
+      entry("Certificate", "cert-manager.io/v1", "crd"),
       entry("Certificate", "cert-manager.io/v1", "cluster"),
     }
     local lookup = build_lookup(index, SCHEMAS_DIR)
@@ -114,15 +113,6 @@ describe("schema priority: single winner per kind|apiVersion", function()
     assert.equals("cluster", lookup["MyApp|example.com/v1"].source)
   end)
 
-  it("kubernetes (yannh) beats datreeio", function()
-    local index = {
-      entry("Deployment", "apps/v1", "datreeio"),
-      entry("Deployment", "apps/v1", "kubernetes"),
-    }
-    local lookup = build_lookup(index, SCHEMAS_DIR)
-    assert.equals("kubernetes", lookup["Deployment|apps/v1"].source)
-  end)
-
   it("kubernetes beats schemastore", function()
     local index = {
       entry("Deployment", "apps/v1", "schemastore"),
@@ -132,28 +122,18 @@ describe("schema priority: single winner per kind|apiVersion", function()
     assert.equals("kubernetes", lookup["Deployment|apps/v1"].source)
   end)
 
-  it("crd beats datreeio", function()
+  it("crd beats schemastore", function()
     local index = {
-      entry("MyCRD", "example.com/v1", "datreeio"),
+      entry("MyCRD", "example.com/v1", "schemastore"),
       entry("MyCRD", "example.com/v1", "crd"),
     }
     local lookup = build_lookup(index, SCHEMAS_DIR)
     assert.equals("crd", lookup["MyCRD|example.com/v1"].source)
   end)
 
-  it("datreeio beats schemastore", function()
-    local index = {
-      entry("Something", "foo.io/v1", "schemastore"),
-      entry("Something", "foo.io/v1", "datreeio"),
-    }
-    local lookup = build_lookup(index, SCHEMAS_DIR)
-    assert.equals("datreeio", lookup["Something|foo.io/v1"].source)
-  end)
-
-  it("full priority chain: cluster > kubernetes > crd > datreeio > schemastore", function()
+  it("full priority chain: cluster > kubernetes > crd > schemastore", function()
     local index = {
       entry("Foo", "bar.io/v1", "schemastore"),
-      entry("Foo", "bar.io/v1", "datreeio"),
       entry("Foo", "bar.io/v1", "crd"),
       entry("Foo", "bar.io/v1", "kubernetes"),
       entry("Foo", "bar.io/v1", "cluster"),
@@ -166,7 +146,6 @@ describe("schema priority: single winner per kind|apiVersion", function()
   it("order in index does not affect winner (cluster last still wins)", function()
     local index = {
       entry("Deployment", "apps/v1", "schemastore"),
-      entry("Deployment", "apps/v1", "datreeio"),
       entry("Deployment", "apps/v1", "kubernetes"),
       entry("Deployment", "apps/v1", "cluster"),   -- last but highest priority
     }
@@ -187,7 +166,7 @@ describe("schema priority: single winner per kind|apiVersion", function()
     local index = {
       entry("Deployment", "apps/v1", "kubernetes"),
       entry("Deployment", "apps/v1", "cluster"),
-      entry("Deployment", "apps/v1", "datreeio"),
+      entry("Deployment", "apps/v1", "crd"),
     }
     local lookup = build_lookup(index, SCHEMAS_DIR)
     -- Should be exactly one key, not three
@@ -309,7 +288,7 @@ describe("priority table completeness", function()
     assert.is_not_nil(f, "autoschema.lua not found at " .. path)
     local content = f:read("*a"); f:close()
 
-    local required_sources = { "cluster", "kubernetes", "crd", "datreeio", "schemastore" }
+    local required_sources = { "cluster", "kubernetes", "crd", "schemastore" }
     for _, src in ipairs(required_sources) do
       assert.is_truthy(
         content:match(src .. "%s*=%s*%d"),
@@ -322,11 +301,10 @@ describe("priority table completeness", function()
     assert.equals(1, PRIORITIES.cluster)
   end)
 
-  it("priority order matches the design: cluster<kubernetes<crd<datreeio<schemastore", function()
-    assert.is_true(PRIORITIES.cluster     < PRIORITIES.kubernetes)
-    assert.is_true(PRIORITIES.kubernetes  < PRIORITIES.crd)
-    assert.is_true(PRIORITIES.crd         < PRIORITIES.datreeio)
-    assert.is_true(PRIORITIES.datreeio    < PRIORITIES.schemastore)
+  it("priority order matches the design: cluster<kubernetes<crd<schemastore", function()
+    assert.is_true(PRIORITIES.cluster    < PRIORITIES.kubernetes)
+    assert.is_true(PRIORITIES.kubernetes < PRIORITIES.crd)
+    assert.is_true(PRIORITIES.crd        < PRIORITIES.schemastore)
   end)
 
 end)

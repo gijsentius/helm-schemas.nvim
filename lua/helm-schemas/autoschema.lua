@@ -106,8 +106,7 @@ local function build_lookup(generate)
         cluster     = 1,   -- live cluster schema (most specific)
         kubernetes  = 2,   -- yannh k8s builtins
         crd         = 3,   -- user-added CRD via prompt_crd
-        datreeio    = 4,   -- datreeio community CRD catalog
-        schemastore = 5,   -- SchemaStore fallback
+        schemastore = 4,   -- SchemaStore fallback
       })[entry.source] or 9
       local existing = lookup[key]
       if not existing or priority < existing.priority then
